@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8' />
+    <title>Asset Generator</title>
+    <style>
+        body {
+            background: #222;
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 40px;
+        }
+        canvas {
+            max-width: 90vw;
+            border: 1px solid #444;
+        }
+        .favicon-preview {
+            background-image: 
+                linear-gradient(45deg, #ccc 25%, transparent 25%), 
+                linear-gradient(-45deg, #ccc 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #ccc 75%), 
+                linear-gradient(-45deg, transparent 75%, #ccc 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            background-color: #fff;
+        }
+        .container {
+            text-align: center;
+        }
+        button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class='container'>
+        <h2>Poster</h2>
+        <canvas id='posterCanvas'></canvas>
+        <br />
+        <button onclick="download('posterCanvas', 'poster.png')">Download Poster</button>
+    </div>
+
+    <div class='container'>
+        <h2>Favicon</h2>
+        <canvas id='faviconCanvas' class='favicon-preview'></canvas>
+        <br />
+        <button onclick="download('faviconCanvas', 'favicon.png')">Download Favicon</button>
+    </div>
+
+    <script>
+        'use strict';
+
+        const CONFIG = {
+            POSTER_SIZE: 2000,
+            FAVICON_SIZE: 512,
+            GRID_ROWS: 5,
+            GRID_COLS: 5,
+            JITTER: 0.4,
+            COLORS: ['#FFB7B2', '#FFDAC1', '#E2F0CB', '#B5EAD7', '#C7CEEA', '#FDFD96', '#FF9AA2'],
+            FAVICON_BG: '#A7C7E7',
+            FAVICON_STROKE: '#000000',
+            FAVICON_LINE_WIDTH: 20,
+            TRIANGLE_SCALE: 0.6
+        };
+
+        function generatePoster() {
+            const canvas = document.getElementById('posterCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = CONFIG.POSTER_SIZE;
+            canvas.height = CONFIG.POSTER_SIZE;
+
+            const points = [];
+            const cell = CONFIG.POSTER_SIZE / CONFIG.GRID_ROWS;
+
+            for (let r = 0; r <= CONFIG.GRID_ROWS; r++) {
+                const row = [];
+                for (let c = 0; c <= CONFIG.GRID_COLS; c++) {
+                    let x = c * cell;
+                    let y = r * cell;
+                    if (r > 0 && r < CONFIG.GRID_ROWS && c > 0 && c < CONFIG.GRID_COLS) {
+                        x += (Math.random() * 2 - 1) * cell * CONFIG.JITTER;
+                        y += (Math.random() * 2 - 1) * cell * CONFIG.JITTER;
+                    }
+                    row.push({x, y});
+                }
+                points.push(row);
+            }
+
+            for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
+                for (let c = 0; c < CONFIG.GRID_COLS; c++) {
+                    const p = [points[r][c], points[r][c+1], points[r+1][c+1], points[r+1][c]];
+                    const rand = Math.random();
+                    
+                    const drawPoly = (pts) => {
+                        ctx.fillStyle = CONFIG.COLORS[Math.floor(Math.random() * CONFIG.COLORS.length)];
+                        ctx.beginPath();
+                        ctx.moveTo(pts[0].x, pts[0].y);
+                        for(let i=1; i<pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+                        ctx.closePath();
+                        ctx.fill();
+                    };
+
+                    if (rand < 0.33) {
+                        drawPoly([p[0], p[1], p[2], p[3]]);
+                    } else if (rand < 0.66) {
+                        drawPoly([p[0], p[1], p[2]]);
+                        drawPoly([p[0], p[2], p[3]]);
+                    } else {
+                        drawPoly([p[0], p[1], p[3]]);
+                        drawPoly([p[1], p[2], p[3]]);
+                    }
+                }
+            }
+        }
+
+        function generateFavicon() {
+            const canvas = document.getElementById('faviconCanvas');
+            const ctx = canvas.getContext('2d');
+            const s = CONFIG.FAVICON_SIZE;
+            canvas.width = s;
+            canvas.height = s;
+
+            // Background Square
+            ctx.fillStyle = CONFIG.FAVICON_BG;
+            ctx.fillRect(0, 0, s, s);
+
+            // Triangle setup
+            const center = s / 2;
+            const radius = (s / 2) * CONFIG.TRIANGLE_SCALE;
+            
+            const p1 = { x: center, y: center - radius };
+            const p2 = { x: center - radius * 0.866, y: center + radius * 0.5 };
+            const p3 = { x: center + radius * 0.866, y: center + radius * 0.5 };
+
+            // Cut out triangle
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.lineTo(p3.x, p3.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // Stroke triangle
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = CONFIG.FAVICON_STROKE;
+            ctx.lineWidth = CONFIG.FAVICON_LINE_WIDTH;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        }
+
+        function download(canvasId, name) {
+            const link = document.createElement('a');
+            link.download = name;
+            link.href = document.getElementById(canvasId).toDataURL();
+            link.click();
+        }
+
+        generatePoster();
+        generateFavicon();
+    </script>
+</body>
+</html>
