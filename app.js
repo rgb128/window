@@ -1,18 +1,38 @@
 'use strict';
 
 const CONFIG = {
+    // Base resolution of fetched images and internal canvas coordinate system. Should be high enough to avoid pixelation (e.g., 1000-2000).
     IMAGE_SIZE: 1000,
+    
+    // Number of horizontal grid cells. 
     GRID_ROWS: 4,
+    
+    // Number of vertical grid cells.
     GRID_COLS: 4,
-    MIN_POOL_SIZE: 16,
-    TARGET_POOL_SIZE: 32,
-    JITTER_FACTOR: 0.35,
-    LINE_WIDTH: 3,
-    LINE_COLOR: '#ffffff',
-    EXPAND_SPEED: 0.04,
-    MAX_PROGRESS: 0.75,
-    PUSH_MULTIPLIER: 150000,
-    EDGE_CONSTRAINT: true
+    
+    // Maximum images used per generation. Since a cell can split into 2 triangles, this MUST be at least GRID_ROWS * GRID_COLS * 2. For 5x5, this SHOULD BE 50.
+    MAX_NEEDED_IMAGES: 50, 
+    
+    // Total images to keep cached in memory. Should be >= MAX_NEEDED_IMAGES to ensure instant transitions.
+    TARGET_POOL_SIZE: 150,
+    
+    // Number of concurrent image fetch requests. 3-5 is usually optimal to avoid browser connection limits.
+    FETCH_BATCH_SIZE: 3,
+    
+    // How much vertices deviate from a perfect grid. 0 = strict grid, 0.5 = heavy distortion. Should be < 0.5 to prevent self-intersecting polygons.
+    JITTER_FACTOR: 0.4,
+    
+    // Multiplier for canvas size relative to screen size. Hides edges pulling inward during extreme distortion. Should be 1.1 to 1.5.
+    OVERSCALE: 1.1, 
+    
+    // Amount added to animation progress per frame. Lower = slower animation.
+    EXPAND_SPEED: 0.0005,
+    
+    // Max limit for animation progress (0.0 to 1.0). 1.0 pushes points entirely to the boundaries. You wanted it around 60%, so this should be ~0.6.
+    MAX_PROGRESS: 0.8,
+    
+    // Mathematical curve for pushing points. 1.0 is linear. < 1.0 makes points near the click move much faster/farther than points far away.
+    BULGE_POWER: 0.15 
 };
 
 const state = {
@@ -20,6 +40,7 @@ const state = {
     polygons: [],
     points: [],
     isLoaded: false,
+    isFetching: false,
     isDown: false,
     clickX: 0,
     clickY: 0,
@@ -32,6 +53,8 @@ const state = {
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const loading = document.getElementById('loading');
+const computedStyle = getComputedStyle(document.documentElement);
+const loadingPct = document.getElementById('loading-pct');
 
 function resize() {
     canvas.width = window.innerWidth;
@@ -39,7 +62,8 @@ function resize() {
     
     const scaleX = canvas.width / CONFIG.IMAGE_SIZE;
     const scaleY = canvas.height / CONFIG.IMAGE_SIZE;
-    state.scale = Math.max(scaleX, scaleY);
+    
+    state.scale = Math.max(scaleX, scaleY) * CONFIG.OVERSCALE;
     
     state.offsetX = (canvas.width - CONFIG.IMAGE_SIZE * state.scale) / 2;
     state.offsetY = (canvas.height - CONFIG.IMAGE_SIZE * state.scale) / 2;
@@ -56,19 +80,48 @@ function fetchImage() {
 }
 
 async function maintainImagePool() {
+    if (state.isFetching) return;
+    state.isFetching = true;
+    
     while (state.images.length < CONFIG.TARGET_POOL_SIZE) {
-        const img = await fetchImage();
-        if (img) {
-            state.images.push(img);
-            if (!state.isLoaded && state.images.length >= CONFIG.MIN_POOL_SIZE) {
-                state.isLoaded = true;
-                loading.style.opacity = '0';
-                setTimeout(() => loading.style.display = 'none', 500);
-                generateGrid();
-                requestAnimationFrame(render);
+        const batch = [];
+        for (let i = 0; i < CONFIG.FETCH_BATCH_SIZE; i++) {
+            if (state.images.length + batch.length < CONFIG.TARGET_POOL_SIZE) {
+                batch.push(fetchImage());
             }
         }
+        
+        const fetched = await Promise.all(batch);
+        for (let i = 0; i < fetched.length; i++) {
+            if (fetched[i]) {
+                state.images.push(fetched[i]);
+                if (!state.isLoaded) {
+                    const pct = Math.min((state.images.length / CONFIG.MAX_NEEDED_IMAGES) * 100, 100);
+                    loadingPct.textContent = pct.toFixed(0);
+                    // loadingPct.textContent = pct.toFixed(1);
+                }
+            }
+        }
+        
+        if (!state.isLoaded && state.images.length >= CONFIG.MAX_NEEDED_IMAGES) {
+            state.isLoaded = true;
+            hideLoading();
+            generateGrid();
+            requestAnimationFrame(render);
+        }
     }
+    
+    state.isFetching = false;
+}
+
+function showLoading() {
+    loading.style.display = 'flex';
+    setTimeout(() => { loading.style.opacity = '1'; }, 10);
+}
+
+function hideLoading() {
+    loading.style.opacity = '0';
+    setTimeout(() => { loading.style.display = 'none'; }, 500);
 }
 
 function getImages(count) {
@@ -100,13 +153,13 @@ function generateGrid() {
                 y += (Math.random() * 2 - 1) * cellH * CONFIG.JITTER_FACTOR;
             }
             
-            row.push({ baseX: x, baseY: y, x: x, y: y, isEdge: isEdge, isCorner: isEdge && (r === 0 || r === CONFIG.GRID_ROWS) && (c === 0 || c === CONFIG.GRID_COLS) });
+            row.push({ baseX: x, baseY: y, x: x, y: y });
         }
         state.points.push(row);
     }
 
-    const neededImages = CONFIG.GRID_ROWS * CONFIG.GRID_COLS * 2;
-    const polyImages = getImages(neededImages);
+    const maxNeeded = CONFIG.GRID_ROWS * CONFIG.GRID_COLS * 2;
+    const polyImages = getImages(maxNeeded);
     let imgIdx = 0;
 
     for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
@@ -116,7 +169,10 @@ function generateGrid() {
             const p3 = state.points[r + 1][c + 1];
             const p4 = state.points[r + 1][c];
 
-            if (Math.random() > 0.5) {
+            const rand = Math.random();
+            if (rand < 0.33) {
+                state.polygons.push({ pts: [p1, p2, p3, p4], img: polyImages[imgIdx++] });
+            } else if (rand < 0.66) {
                 state.polygons.push({ pts: [p1, p2, p3], img: polyImages[imgIdx++] });
                 state.polygons.push({ pts: [p1, p3, p4], img: polyImages[imgIdx++] });
             } else {
@@ -127,12 +183,13 @@ function generateGrid() {
     }
 }
 
-function easeOutCubic(t) {
-    return 1 - Math.pow(1 - t, 3);
+function easeOutQuad(t) {
+    return t * (2 - t);
 }
 
 function updatePoints() {
-    const ease = easeOutCubic(state.progress);
+    const ease = easeOutQuad(state.progress);
+    const currentPower = 1.0 - (1.0 - CONFIG.BULGE_POWER) * ease;
 
     for (let r = 0; r <= CONFIG.GRID_ROWS; r++) {
         for (let c = 0; c <= CONFIG.GRID_COLS; c++) {
@@ -144,39 +201,56 @@ function updatePoints() {
                 continue;
             }
 
-            if (p.isCorner) continue;
+            const vx = p.baseX - state.clickX;
+            const vy = p.baseY - state.clickY;
 
-            const dx = p.baseX - state.clickX;
-            const dy = p.baseY - state.clickY;
-            const distSq = dx * dx + dy * dy;
-            const dist = Math.sqrt(distSq) || 0.001;
-            
-            const force = CONFIG.PUSH_MULTIPLIER / (distSq + 10000);
-            
-            let targetX = p.baseX + (dx / dist) * force;
-            let targetY = p.baseY + (dy / dist) * force;
-
-            if (CONFIG.EDGE_CONSTRAINT && p.isEdge) {
-                if (p.baseX === 0 || p.baseX === CONFIG.IMAGE_SIZE) targetX = p.baseX;
-                if (p.baseY === 0 || p.baseY === CONFIG.IMAGE_SIZE) targetY = p.baseY;
+            if (vx === 0 && vy === 0) {
+                p.x = p.baseX;
+                p.y = p.baseY;
+                continue;
             }
 
-            targetX = Math.max(0, Math.min(CONFIG.IMAGE_SIZE, targetX));
-            targetY = Math.max(0, Math.min(CONFIG.IMAGE_SIZE, targetY));
+            let tx = Infinity;
+            let ty = Infinity;
 
-            p.x = p.baseX + (targetX - p.baseX) * ease;
-            p.y = p.baseY + (targetY - p.baseY) * ease;
+            if (vx < 0) tx = (0 - state.clickX) / vx;
+            else if (vx > 0) tx = (CONFIG.IMAGE_SIZE - state.clickX) / vx;
+
+            if (vy < 0) ty = (0 - state.clickY) / vy;
+            else if (vy > 0) ty = (CONFIG.IMAGE_SIZE - state.clickY) / vy;
+
+            const t_edge = Math.min(tx, ty);
+            let u = 1 / t_edge;
+            
+            if (u > 1) u = 1;
+            if (u < 0) u = 0;
+
+            const u_new = Math.pow(u, currentPower);
+            const t_new = u_new * t_edge;
+
+            p.x = state.clickX + vx * t_new;
+            p.y = state.clickY + vy * t_new;
         }
     }
 }
 
+let isRendering = false;
 function render() {
     if (state.isDown && state.progress < CONFIG.MAX_PROGRESS) {
         state.progress += CONFIG.EXPAND_SPEED;
         if (state.progress > CONFIG.MAX_PROGRESS) state.progress = CONFIG.MAX_PROGRESS;
     } else if (!state.isDown && state.progress > 0) {
         state.progress = 0;
-        generateGrid();
+        
+        if (state.images.length >= CONFIG.MAX_NEEDED_IMAGES) {
+            generateGrid();
+        } else {
+            showLoading();
+            state.isLoaded = false;
+            maintainImagePool();
+            isRendering = false;
+            return; 
+        }
     }
 
     updatePoints();
@@ -206,9 +280,10 @@ function render() {
         ctx.restore();
     }
 
-    if (CONFIG.LINE_WIDTH > 0) {
-        ctx.lineWidth = CONFIG.LINE_WIDTH / state.scale;
-        ctx.strokeStyle = CONFIG.LINE_COLOR;
+    const lineWidthRaw = parseInt(computedStyle.getPropertyValue('--line-width')) || 0;
+    if (lineWidthRaw > 0) {
+        ctx.lineWidth = lineWidthRaw / state.scale;
+        ctx.strokeStyle = computedStyle.getPropertyValue('--line-color').trim() || '#fff';
         ctx.lineJoin = 'round';
         
         for (let i = 0; i < state.polygons.length; i++) {
@@ -224,7 +299,11 @@ function render() {
     }
 
     ctx.restore();
-    requestAnimationFrame(render);
+    
+    if (state.isLoaded) {
+        isRendering = true;
+        requestAnimationFrame(render);
+    }
 }
 
 function handleDown(e) {
