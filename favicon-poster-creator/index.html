@@ -60,22 +60,23 @@
         'use strict';
 
         const CONFIG = {
-            POSTER_SIZE: 2000,
-            POSTER_OVERSCALE: 1.15,
-            POSTER_BG: '#f4f4f4',
-            GRID_ROWS: 5,
-            GRID_COLS: 5,
-            JITTER: 0.4,
-            LINE_WIDTH: 10,
-            PASTELS: ['#FFB7B2', '#FFDAC1', '#E2F0CB', '#B5EAD7', '#C7CEEA', '#FDFD96', '#FF9AA2'],
+            // Poster Settings
+            POSTER_SIZE: 1000,           // Base resolution of the poster
+            POSTER_OVERSCALE: 1.15,      // Scale factor to push edge dots off-canvas
+            POSTER_BG: '#f4f4f4',        // Main background and line color
+            POSTER_LINE_COLOR: '#000000',// Color of the internal grid lines
+            GRID_ROWS: 5,                // Horizontal cell count
+            GRID_COLS: 5,                // Vertical cell count
+            JITTER: 0.4,                 // Randomness of vertex placement (0 to 0.5)
+            LINE_WIDTH: 0,              // Width of the grid lines
+            PASTELS: ['#FFB7B2', '#FFDAC1', '#E2F0CB', '#B5EAD7', '#C7CEEA', '#FDFD96', '#FF9AA2'], // Fill color palette
             
-            FAVICON_SIZE: 512,
-            FAVICON_BG: '#A7C7E7',
-            FAVICON_STROKE: '#ffffff',
-            FAVICON_LINE_WIDTH: 24,
-            FAVICON_DOT_COUNT: 12,
-            FAVICON_DOT_SIZE: 8,
-            FAVICON_TRI_JITTER: 0.2
+            // Favicon Settings
+            FAVICON_SIZE: 512,           // Size of the square favicon image
+            FAVICON_BG: '#A7C7E7',       // Background fill color
+            FAVICON_STROKE: '#ffffff',   // Color of the triangle outline
+            FAVICON_LINE_WIDTH: 24,      // Thickness of the triangle outline
+            FAVICON_TRI_JITTER: 0.2      // How "wrong" or irregular the triangle shape is
         };
 
         function generatePoster() {
@@ -91,7 +92,6 @@
             const cell = CONFIG.POSTER_SIZE / CONFIG.GRID_ROWS;
             const lines = [];
 
-            // Shift and scale context for overscale
             ctx.save();
             const offset = (CONFIG.POSTER_SIZE * (CONFIG.POSTER_OVERSCALE - 1)) / 2;
             ctx.translate(-offset, -offset);
@@ -144,16 +144,18 @@
                 }
             }
 
-            ctx.strokeStyle = CONFIG.POSTER_BG;
-            ctx.lineWidth = CONFIG.LINE_WIDTH;
-            ctx.lineCap = 'butt';
-            ctx.lineJoin = 'miter';
-            ctx.beginPath();
-            for (let i = 0; i < lines.length; i++) {
-                ctx.moveTo(lines[i][0].x, lines[i][0].y);
-                ctx.lineTo(lines[i][1].x, lines[i][1].y);
+            if (CONFIG.LINE_WIDTH) {
+                ctx.strokeStyle = CONFIG.POSTER_LINE_COLOR;
+                ctx.lineWidth = CONFIG.LINE_WIDTH;
+                ctx.lineCap = 'butt';
+                ctx.lineJoin = 'miter';
+                ctx.beginPath();
+                for (let i = 0; i < lines.length; i++) {
+                    ctx.moveTo(lines[i][0].x, lines[i][0].y);
+                    ctx.lineTo(lines[i][1].x, lines[i][1].y);
+                }
+                ctx.stroke();
             }
-            ctx.stroke();
             ctx.restore();
         }
 
@@ -167,14 +169,6 @@
             ctx.fillStyle = CONFIG.FAVICON_BG;
             ctx.fillRect(0, 0, s, s);
 
-            // Add random dots
-            ctx.fillStyle = CONFIG.FAVICON_STROKE;
-            for (let i = 0; i < CONFIG.FAVICON_DOT_COUNT; i++) {
-                ctx.beginPath();
-                ctx.arc(Math.random() * s, Math.random() * s, CONFIG.FAVICON_DOT_SIZE, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
             const center = s / 2;
             const radius = s * 0.3;
             const jit = () => (Math.random() * 2 - 1) * s * CONFIG.FAVICON_TRI_JITTER;
@@ -183,6 +177,7 @@
             const p2 = { x: center - radius + jit(), y: center + radius + jit() };
             const p3 = { x: center + radius + jit(), y: center + radius + jit() };
 
+            // Cut transparent triangle
             ctx.globalCompositeOperation = 'destination-out';
             ctx.beginPath();
             ctx.moveTo(p1.x, p1.y);
@@ -191,6 +186,7 @@
             ctx.closePath();
             ctx.fill();
 
+            // Draw stroke
             ctx.globalCompositeOperation = 'source-over';
             ctx.strokeStyle = CONFIG.FAVICON_STROKE;
             ctx.lineWidth = CONFIG.FAVICON_LINE_WIDTH;
