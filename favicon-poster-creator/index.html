@@ -27,6 +27,8 @@
             background-size: 20px 20px;
             background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
             background-color: #fff;
+            width: 256px;
+            height: 256px;
         }
         .container {
             text-align: center;
@@ -59,15 +61,21 @@
 
         const CONFIG = {
             POSTER_SIZE: 2000,
-            FAVICON_SIZE: 512,
+            POSTER_OVERSCALE: 1.15,
+            POSTER_BG: '#f4f4f4',
             GRID_ROWS: 5,
             GRID_COLS: 5,
             JITTER: 0.4,
-            COLORS: ['#FFB7B2', '#FFDAC1', '#E2F0CB', '#B5EAD7', '#C7CEEA', '#FDFD96', '#FF9AA2'],
+            LINE_WIDTH: 10,
+            PASTELS: ['#FFB7B2', '#FFDAC1', '#E2F0CB', '#B5EAD7', '#C7CEEA', '#FDFD96', '#FF9AA2'],
+            
+            FAVICON_SIZE: 512,
             FAVICON_BG: '#A7C7E7',
-            FAVICON_STROKE: '#000000',
-            FAVICON_LINE_WIDTH: 20,
-            TRIANGLE_SCALE: 0.6
+            FAVICON_STROKE: '#ffffff',
+            FAVICON_LINE_WIDTH: 24,
+            FAVICON_DOT_COUNT: 12,
+            FAVICON_DOT_SIZE: 8,
+            FAVICON_TRI_JITTER: 0.2
         };
 
         function generatePoster() {
@@ -76,15 +84,26 @@
             canvas.width = CONFIG.POSTER_SIZE;
             canvas.height = CONFIG.POSTER_SIZE;
 
+            ctx.fillStyle = CONFIG.POSTER_BG;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
             const points = [];
             const cell = CONFIG.POSTER_SIZE / CONFIG.GRID_ROWS;
+            const lines = [];
+
+            // Shift and scale context for overscale
+            ctx.save();
+            const offset = (CONFIG.POSTER_SIZE * (CONFIG.POSTER_OVERSCALE - 1)) / 2;
+            ctx.translate(-offset, -offset);
+            ctx.scale(CONFIG.POSTER_OVERSCALE, CONFIG.POSTER_OVERSCALE);
 
             for (let r = 0; r <= CONFIG.GRID_ROWS; r++) {
                 const row = [];
                 for (let c = 0; c <= CONFIG.GRID_COLS; c++) {
                     let x = c * cell;
                     let y = r * cell;
-                    if (r > 0 && r < CONFIG.GRID_ROWS && c > 0 && c < CONFIG.GRID_COLS) {
+                    const isEdge = r === 0 || r === CONFIG.GRID_ROWS || c === 0 || c === CONFIG.GRID_COLS;
+                    if (!isEdge) {
                         x += (Math.random() * 2 - 1) * cell * CONFIG.JITTER;
                         y += (Math.random() * 2 - 1) * cell * CONFIG.JITTER;
                     }
@@ -95,11 +114,16 @@
 
             for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
                 for (let c = 0; c < CONFIG.GRID_COLS; c++) {
-                    const p = [points[r][c], points[r][c+1], points[r+1][c+1], points[r+1][c]];
-                    const rand = Math.random();
-                    
-                    const drawPoly = (pts) => {
-                        ctx.fillStyle = CONFIG.COLORS[Math.floor(Math.random() * CONFIG.COLORS.length)];
+                    const p1 = points[r][c];
+                    const p2 = points[r][c+1];
+                    const p3 = points[r+1][c+1];
+                    const p4 = points[r+1][c];
+
+                    if (r > 0) lines.push([p1, p2]);
+                    if (c > 0) lines.push([p1, p4]);
+
+                    const draw = (pts) => {
+                        ctx.fillStyle = CONFIG.PASTELS[Math.floor(Math.random() * CONFIG.PASTELS.length)];
                         ctx.beginPath();
                         ctx.moveTo(pts[0].x, pts[0].y);
                         for(let i=1; i<pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -107,17 +131,30 @@
                         ctx.fill();
                     };
 
+                    const rand = Math.random();
                     if (rand < 0.33) {
-                        drawPoly([p[0], p[1], p[2], p[3]]);
+                        draw([p1, p2, p3, p4]);
                     } else if (rand < 0.66) {
-                        drawPoly([p[0], p[1], p[2]]);
-                        drawPoly([p[0], p[2], p[3]]);
+                        draw([p1, p2, p3]); draw([p1, p3, p4]);
+                        lines.push([p1, p3]);
                     } else {
-                        drawPoly([p[0], p[1], p[3]]);
-                        drawPoly([p[1], p[2], p[3]]);
+                        draw([p1, p2, p4]); draw([p2, p3, p4]);
+                        lines.push([p2, p4]);
                     }
                 }
             }
+
+            ctx.strokeStyle = CONFIG.POSTER_BG;
+            ctx.lineWidth = CONFIG.LINE_WIDTH;
+            ctx.lineCap = 'butt';
+            ctx.lineJoin = 'miter';
+            ctx.beginPath();
+            for (let i = 0; i < lines.length; i++) {
+                ctx.moveTo(lines[i][0].x, lines[i][0].y);
+                ctx.lineTo(lines[i][1].x, lines[i][1].y);
+            }
+            ctx.stroke();
+            ctx.restore();
         }
 
         function generateFavicon() {
@@ -127,19 +164,25 @@
             canvas.width = s;
             canvas.height = s;
 
-            // Background Square
             ctx.fillStyle = CONFIG.FAVICON_BG;
             ctx.fillRect(0, 0, s, s);
 
-            // Triangle setup
-            const center = s / 2;
-            const radius = (s / 2) * CONFIG.TRIANGLE_SCALE;
-            
-            const p1 = { x: center, y: center - radius };
-            const p2 = { x: center - radius * 0.866, y: center + radius * 0.5 };
-            const p3 = { x: center + radius * 0.866, y: center + radius * 0.5 };
+            // Add random dots
+            ctx.fillStyle = CONFIG.FAVICON_STROKE;
+            for (let i = 0; i < CONFIG.FAVICON_DOT_COUNT; i++) {
+                ctx.beginPath();
+                ctx.arc(Math.random() * s, Math.random() * s, CONFIG.FAVICON_DOT_SIZE, 0, Math.PI * 2);
+                ctx.fill();
+            }
 
-            // Cut out triangle
+            const center = s / 2;
+            const radius = s * 0.3;
+            const jit = () => (Math.random() * 2 - 1) * s * CONFIG.FAVICON_TRI_JITTER;
+
+            const p1 = { x: center + jit(), y: center - radius + jit() };
+            const p2 = { x: center - radius + jit(), y: center + radius + jit() };
+            const p3 = { x: center + radius + jit(), y: center + radius + jit() };
+
             ctx.globalCompositeOperation = 'destination-out';
             ctx.beginPath();
             ctx.moveTo(p1.x, p1.y);
@@ -148,11 +191,11 @@
             ctx.closePath();
             ctx.fill();
 
-            // Stroke triangle
             ctx.globalCompositeOperation = 'source-over';
             ctx.strokeStyle = CONFIG.FAVICON_STROKE;
             ctx.lineWidth = CONFIG.FAVICON_LINE_WIDTH;
-            ctx.lineJoin = 'round';
+            ctx.lineJoin = 'miter';
+            ctx.lineCap = 'butt';
             ctx.stroke();
         }
 
