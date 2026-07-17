@@ -1,10 +1,18 @@
 :root {
-    --bg-color: #111;
-    --text-color: #fff;
-    --line-color: #fff;
-    --line-color: #fff;
-    --line-width: 4px; /* Must be > 0 */
+    --bg-color: #f4f4f4;
+    --text-color: #111;
+    --line-color: #f4f4f4;
+    --line-width: 4px;
 }
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-color: #111;
+        --text-color: #f4f4f4;
+        --line-color: #111;
+    }
+}
+
 body, html {
     margin: 0;
     padding: 0;
@@ -16,11 +24,13 @@ body, html {
     user-select: none;
     -webkit-user-select: none;
 }
+
 #canvas {
     display: block;
     width: 100%;
     height: 100%;
 }
+
 #loading {
     position: absolute;
     top: 0;
@@ -37,10 +47,12 @@ body, html {
     z-index: 10;
     transition: opacity 0.5s ease;
 }
+
 .dots::after {
     content: '';
     animation: dots 1.5s steps(4, end) infinite;
 }
+
 @keyframes dots {
     0% { content: ''; }
     25% { content: '.'; }
