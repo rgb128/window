@@ -29,7 +29,7 @@ const CONFIG = {
     EXPAND_SPEED: 0.0005,
     
     // Max limit for animation progress (0.0 to 1.0). 1.0 pushes points entirely to the boundaries. You wanted it around 60%, so this should be ~0.6.
-    MAX_PROGRESS: 0.8,
+    MAX_PROGRESS: 0.9,
     
     // Mathematical curve for pushing points. 1.0 is linear. < 1.0 makes points near the click move much faster/farther than points far away.
     BULGE_POWER: 0.15 
@@ -39,6 +39,7 @@ const state = {
     images: [],
     polygons: [],
     points: [],
+    lines: [],
     isLoaded: false,
     isFetching: false,
     isDown: false,
@@ -96,14 +97,13 @@ async function maintainImagePool() {
             if (fetched[i]) {
                 state.images.push(fetched[i]);
                 if (!state.isLoaded) {
-                    const pct = Math.min((state.images.length / CONFIG.MAX_NEEDED_IMAGES) * 100, 100);
+                    const pct = Math.min((state.images.length / CONFIG.TARGET_POOL_SIZE) * 100, 100);
                     loadingPct.textContent = pct.toFixed(0);
-                    // loadingPct.textContent = pct.toFixed(1);
                 }
             }
         }
         
-        if (!state.isLoaded && state.images.length >= CONFIG.MAX_NEEDED_IMAGES) {
+        if (!state.isLoaded && state.images.length >= CONFIG.TARGET_POOL_SIZE) {
             state.isLoaded = true;
             hideLoading();
             generateGrid();
@@ -136,6 +136,7 @@ function getImages(count) {
 function generateGrid() {
     state.points = [];
     state.polygons = [];
+    state.lines = [];
     
     const cellW = CONFIG.IMAGE_SIZE / CONFIG.GRID_COLS;
     const cellH = CONFIG.IMAGE_SIZE / CONFIG.GRID_ROWS;
@@ -169,15 +170,20 @@ function generateGrid() {
             const p3 = state.points[r + 1][c + 1];
             const p4 = state.points[r + 1][c];
 
+            if (r > 0) state.lines.push([p1, p2]);
+            if (c > 0) state.lines.push([p1, p4]);
+
             const rand = Math.random();
             if (rand < 0.33) {
                 state.polygons.push({ pts: [p1, p2, p3, p4], img: polyImages[imgIdx++] });
             } else if (rand < 0.66) {
                 state.polygons.push({ pts: [p1, p2, p3], img: polyImages[imgIdx++] });
                 state.polygons.push({ pts: [p1, p3, p4], img: polyImages[imgIdx++] });
+                state.lines.push([p1, p3]);
             } else {
                 state.polygons.push({ pts: [p1, p2, p4], img: polyImages[imgIdx++] });
                 state.polygons.push({ pts: [p2, p3, p4], img: polyImages[imgIdx++] });
+                state.lines.push([p2, p4]);
             }
         }
     }
@@ -285,17 +291,15 @@ function render() {
         ctx.lineWidth = lineWidthRaw / state.scale;
         ctx.strokeStyle = computedStyle.getPropertyValue('--line-color').trim() || '#fff';
         ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
         
-        for (let i = 0; i < state.polygons.length; i++) {
-            const poly = state.polygons[i];
-            ctx.beginPath();
-            ctx.moveTo(poly.pts[0].x, poly.pts[0].y);
-            for (let j = 1; j < poly.pts.length; j++) {
-                ctx.lineTo(poly.pts[j].x, poly.pts[j].y);
-            }
-            ctx.closePath();
-            ctx.stroke();
+        ctx.beginPath();
+        for (let i = 0; i < state.lines.length; i++) {
+            const line = state.lines[i];
+            ctx.moveTo(line[0].x, line[0].y);
+            ctx.lineTo(line[1].x, line[1].y);
         }
+        ctx.stroke();
     }
 
     ctx.restore();

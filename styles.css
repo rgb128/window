@@ -2,6 +2,8 @@
     --bg-color: #111;
     --text-color: #fff;
     --line-color: #fff;
+    --line-color: #fff;
+    --line-width: 4px; /* Must be > 0 */
 }
 body, html {
     margin: 0;
